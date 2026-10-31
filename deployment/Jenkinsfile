@@ -1,4 +1,3 @@
-```groovy
 pipeline {
 
     agent any
@@ -735,4 +734,3 @@ echo "Previous container retained for rollback."
         }
     }
 }
-```
