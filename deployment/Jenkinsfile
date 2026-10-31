@@ -286,6 +286,8 @@ pipeline {
 
                 script {
 
+                    def ECR_REGISTRY = ECR_URI.split('/')[0]
+
                     def remoteScript = """
 #!/bin/bash
 
@@ -330,8 +332,8 @@ mkdir -p "\${STATE_DIR}"
 
 echo "Authenticating with ECR..."
 
-aws ecr get-login-password --region ${AWS_REGION} | \\
-docker login --username AWS --password-stdin ${ECR_URI.split('/')[0]}
+aws ecr get-login-password --region ${AWS_REGION} | \
+docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
 # --------------------------------------
 # 2. RETRIEVE ENVIRONMENT VARIABLES
