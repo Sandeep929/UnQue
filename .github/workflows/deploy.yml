@@ -212,10 +212,10 @@ jobs:
                   value = p["Value"]
 
                   if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-                      raise SystemExit("Invalid environment variable name")
+                    raise SystemExit("Invalid environment variable name")
 
                   if "\n" in value or "\r" in value:
-                      raise SystemExit("Multiline environment values are unsupported")
+                    raise SystemExit("Multiline environment values are unsupported")
 
                   f.write(f"{key}={value}\n")
           PY
@@ -358,7 +358,7 @@ jobs:
 
           echo "========== PYTHON BLOCK WITH VISIBLE SPACES =========="
           sed -n '15,40l' remote.sh
-          
+
       - name: Run deployment on EC2 via SSM
         run: |
           set -e
