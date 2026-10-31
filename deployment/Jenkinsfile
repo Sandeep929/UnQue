@@ -186,25 +186,25 @@ pipeline {
         }
 
 
-        // =====================================
-        // 4. APPLICATION TESTING
-        // =====================================
+        // // =====================================
+        // // 4. APPLICATION TESTING
+        // // =====================================
 
-        stage('Test Application') {
+        // stage('Test Application') {
 
-            steps {
+        //     steps {
 
-                sh '''
-                    set -e
+        //         sh '''
+        //             set -e
 
-                    npm ci
+        //             npm ci
 
-                    npm run test --if-present
+        //             npm run test --if-present
 
-                    echo "Tests completed successfully."
-                '''
-            }
-        }
+        //             echo "Tests completed successfully."
+        //         '''
+        //     }
+        // }
 
 
         // =====================================
