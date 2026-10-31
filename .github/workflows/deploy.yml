@@ -211,11 +211,9 @@ jobs:
                   key = p["Name"].split("/")[-1]
                   value = p["Value"]
 
-                  if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
-                    raise SystemExit("Invalid environment variable name")
+                  if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key): raise SystemExit("Invalid environment variable name")
 
-                  if "\n" in value or "\r" in value:
-                    raise SystemExit("Multiline environment values are unsupported")
+                  if "\n" in value or "\r" in value: raise SystemExit("Multiline environment values are unsupported") 
 
                   f.write(f"{key}={value}\n")
           PY
