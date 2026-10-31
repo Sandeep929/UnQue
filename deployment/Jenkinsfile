@@ -383,7 +383,7 @@ rm -f /tmp/unque-parameters.json
 
 if [ -f "\${STATE_FILE}" ]; then
 
-    ACTIVE_SLOT=$(cat "\${STATE_FILE}")
+    ACTIVE_SLOT=\$(cat "\${STATE_FILE}")
 
 else
 
@@ -460,9 +460,9 @@ echo "Waiting for application health..."
 
 HEALTHY=false
 
-for i in $(seq 1 30); do
+for i in \$(seq 1 30); do
 
-    STATUS=$(docker inspect \\
+    STATUS=\$(docker inspect \\
         --format='{{.State.Health.Status}}' \\
         "\${TARGET_CONTAINER}" 2>/dev/null || echo "missing")
 
@@ -519,7 +519,7 @@ echo "New container is healthy!"
 
 echo "Preparing Nginx traffic switch..."
 
-NGINX_DIR=$(dirname "\${NGINX_UPSTREAM}")
+NGINX_DIR=\$(dirname "\${NGINX_UPSTREAM}")
 
 mkdir -p "\${NGINX_DIR}"
 
