@@ -357,7 +357,7 @@ parameters = data.get("Parameters", [])
 if not parameters:
     raise SystemExit("ERROR: No SSM parameters found")
 
-with open("'"\\${ENV_FILE}"'", "w") as f:
+with open(r'"${ENV_FILE}"', "w") as f:
     for p in parameters:
         key = p["Name"].split("/")[-1]
         value = p["Value"]
