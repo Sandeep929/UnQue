@@ -1,0 +1,738 @@
+```groovy
+pipeline {
+
+    agent any
+
+    environment {
+
+        // =====================================
+        // AWS CONFIGURATION
+        // =====================================
+
+        AWS_REGION = 'ap-south-1'
+        AWS_ACCOUNT_ID = '044408705679'
+
+        // =====================================
+        // ECR CONFIGURATION
+        // =====================================
+
+        ECR_REPOSITORY = 'unque'
+
+        // =====================================
+        // CODEBUILD CONFIGURATION
+        // =====================================
+
+        CODEBUILD_PROJECT = 'unque-build'
+
+        // =====================================
+        // DEVELOPMENT CONFIGURATION
+        // =====================================
+
+        DEV_EC2_INSTANCE = 'i-00f7e3aa5f99487bb'
+
+        DEV_SSM_PATH = '/unque/dev'
+
+        DEV_NGINX_UPSTREAM = '/etc/nginx/conf.d/unque-dev-upstream.conf'
+
+        DEV_UPSTREAM_NAME = 'unque_dev_backend'
+
+        DEV_BLUE_PORT = '3001'
+        DEV_GREEN_PORT = '3002'
+
+        DEV_BLUE_CONTAINER = 'unque-backend-dev-blue'
+        DEV_GREEN_CONTAINER = 'unque-backend-dev-green'
+
+        // =====================================
+        // PRODUCTION CONFIGURATION
+        // =====================================
+
+        PROD_EC2_INSTANCE = 'i-00f7e3aa5f99487bb'
+
+        PROD_SSM_PATH = '/unque/prod'
+
+        PROD_NGINX_UPSTREAM = '/etc/nginx/conf.d/unque-prod-upstream.conf'
+
+        PROD_UPSTREAM_NAME = 'unque_prod_backend'
+
+        PROD_BLUE_PORT = '3003'
+        PROD_GREEN_PORT = '3004'
+
+        PROD_BLUE_CONTAINER = 'unque-backend-prod-blue'
+        PROD_GREEN_CONTAINER = 'unque-backend-prod-green'
+
+        // =====================================
+        // APPLICATION CONFIGURATION
+        // =====================================
+
+        CONTAINER_PORT = '3000'
+
+        // =====================================
+        // ECR URI
+        // =====================================
+
+        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+    }
+
+
+    stages {
+
+        // =====================================
+        // 1. VALIDATE BRANCH
+        // =====================================
+
+        stage('Validate Branch') {
+
+            steps {
+
+                script {
+
+                    if (!(env.BRANCH_NAME in ['dev', 'prod'])) {
+                        error("Unsupported branch: ${env.BRANCH_NAME}")
+                    }
+
+                    if (env.BRANCH_NAME == 'dev') {
+
+                        env.DEPLOY_ENV = 'dev'
+
+                        env.EC2_INSTANCE = env.DEV_EC2_INSTANCE
+
+                        env.SSM_PATH = env.DEV_SSM_PATH
+
+                        env.NGINX_UPSTREAM = env.DEV_NGINX_UPSTREAM
+
+                        env.UPSTREAM_NAME = env.DEV_UPSTREAM_NAME
+
+                        env.BLUE_PORT = env.DEV_BLUE_PORT
+                        env.GREEN_PORT = env.DEV_GREEN_PORT
+
+                        env.BLUE_CONTAINER = env.DEV_BLUE_CONTAINER
+                        env.GREEN_CONTAINER = env.DEV_GREEN_CONTAINER
+
+                    } else {
+
+                        env.DEPLOY_ENV = 'prod'
+
+                        env.EC2_INSTANCE = env.PROD_EC2_INSTANCE
+
+                        env.SSM_PATH = env.PROD_SSM_PATH
+
+                        env.NGINX_UPSTREAM = env.PROD_NGINX_UPSTREAM
+
+                        env.UPSTREAM_NAME = env.PROD_UPSTREAM_NAME
+
+                        env.BLUE_PORT = env.PROD_BLUE_PORT
+                        env.GREEN_PORT = env.PROD_GREEN_PORT
+
+                        env.BLUE_CONTAINER = env.PROD_BLUE_CONTAINER
+                        env.GREEN_CONTAINER = env.PROD_GREEN_CONTAINER
+
+                    }
+
+                    env.IMAGE_TAG = env.GIT_COMMIT
+
+                    echo """
+                    =====================================
+                    DEPLOYMENT CONFIGURATION
+                    =====================================
+
+                    Branch       : ${env.BRANCH_NAME}
+                    Environment  : ${env.DEPLOY_ENV}
+                    EC2           : ${env.EC2_INSTANCE}
+                    ECR           : ${env.ECR_URI}
+                    Image Tag     : ${env.IMAGE_TAG}
+
+                    Blue Port     : ${env.BLUE_PORT}
+                    Green Port    : ${env.GREEN_PORT}
+
+                    =====================================
+                    """
+                }
+            }
+        }
+
+
+        // =====================================
+        // 2. VERIFY AWS IAM
+        // =====================================
+
+        stage('Verify AWS Authentication') {
+
+            steps {
+
+                sh '''
+                    set -e
+
+                    echo "Verifying AWS IAM Role..."
+
+                    aws sts get-caller-identity
+
+                    echo "AWS authentication successful!"
+                '''
+            }
+        }
+
+
+        // =====================================
+        // 3. CHECKOUT
+        // =====================================
+
+        stage('Checkout') {
+
+            steps {
+
+                checkout scm
+
+                echo "Source code checked out successfully."
+            }
+        }
+
+
+        // =====================================
+        // 4. APPLICATION TESTING
+        // =====================================
+
+        stage('Test Application') {
+
+            steps {
+
+                sh '''
+                    set -e
+
+                    npm ci
+
+                    npm run test --if-present
+
+                    echo "Tests completed successfully."
+                '''
+            }
+        }
+
+
+        // =====================================
+        // 5. PRODUCTION APPROVAL
+        // =====================================
+
+        stage('Production Approval') {
+
+            when {
+                branch 'prod'
+            }
+
+            steps {
+
+                timeout(time: 15, unit: 'MINUTES') {
+
+                    input(
+                        message: 'Approve production deployment?',
+                        ok: 'Deploy to Production'
+                    )
+                }
+            }
+        }
+
+
+        // =====================================
+        // 6. BUILD AND PUSH IMAGE
+        // =====================================
+
+        stage('Build & Push Image') {
+
+            steps {
+
+                script {
+
+                    sh """
+                        set -e
+
+                        echo "Starting AWS CodeBuild..."
+
+                        BUILD_ID=\$(aws codebuild start-build \\
+                            --project-name ${CODEBUILD_PROJECT} \\
+                            --source-version ${IMAGE_TAG} \\
+                            --environment-variables-override \\
+                                name=IMAGE_TAG,value=${IMAGE_TAG},type=PLAINTEXT \\
+                                name=ECR_REPOSITORY,value=${ECR_REPOSITORY},type=PLAINTEXT \\
+                                name=ENVIRONMENT,value=${DEPLOY_ENV},type=PLAINTEXT \\
+                            --query 'build.id' \\
+                            --output text)
+
+                        echo "Build ID: \$BUILD_ID"
+
+                        aws codebuild wait build-complete --ids \$BUILD_ID
+
+                        BUILD_STATUS=\$(aws codebuild batch-get-builds \\
+                            --ids \$BUILD_ID \\
+                            --query 'builds[0].buildStatus' \\
+                            --output text)
+
+                        if [ "\$BUILD_STATUS" != "SUCCEEDED" ]; then
+                            echo "CodeBuild failed!"
+                            exit 1
+                        fi
+
+                        echo "Image pushed successfully!"
+                    """
+                }
+            }
+        }
+
+
+        // =====================================
+        // 7. BLUE-GREEN DEPLOYMENT
+        // =====================================
+
+        stage('Blue-Green Deployment') {
+
+            steps {
+
+                script {
+
+                    def remoteScript = """
+#!/bin/bash
+
+set -Eeuo pipefail
+
+echo "======================================"
+echo "STARTING BLUE-GREEN DEPLOYMENT"
+echo "Environment: ${DEPLOY_ENV}"
+echo "======================================"
+
+# --------------------------------------
+# CONFIGURATION
+# --------------------------------------
+
+IMAGE="${ECR_URI}:${IMAGE_TAG}"
+
+ENVIRONMENT="${DEPLOY_ENV}"
+
+SSM_PATH="${SSM_PATH}"
+
+BLUE_PORT="${BLUE_PORT}"
+GREEN_PORT="${GREEN_PORT}"
+
+BLUE_CONTAINER="${BLUE_CONTAINER}"
+GREEN_CONTAINER="${GREEN_CONTAINER}"
+
+NGINX_UPSTREAM="${NGINX_UPSTREAM}"
+
+UPSTREAM_NAME="${UPSTREAM_NAME}"
+
+STATE_DIR="/opt/unque/\${ENVIRONMENT}"
+
+STATE_FILE="\${STATE_DIR}/active-slot"
+
+ENV_FILE="\${STATE_DIR}/.env"
+
+mkdir -p "\${STATE_DIR}"
+
+# --------------------------------------
+# 1. ECR AUTHENTICATION
+# --------------------------------------
+
+echo "Authenticating with ECR..."
+
+aws ecr get-login-password --region ${AWS_REGION} | \\
+docker login --username AWS --password-stdin ${ECR_URI.split('/')[0]}
+
+# --------------------------------------
+# 2. RETRIEVE ENVIRONMENT VARIABLES
+# --------------------------------------
+
+echo "Retrieving parameters from SSM..."
+
+aws ssm get-parameters-by-path \\
+    --path "\${SSM_PATH}" \\
+    --recursive \\
+    --with-decryption \\
+    --output json > /tmp/unque-parameters.json
+
+python3 -c '
+import json
+import re
+
+with open("/tmp/unque-parameters.json") as f:
+    data = json.load(f)
+
+parameters = data.get("Parameters", [])
+
+if not parameters:
+    raise SystemExit("ERROR: No SSM parameters found")
+
+with open("'"\\${ENV_FILE}"'", "w") as f:
+    for p in parameters:
+        key = p["Name"].split("/")[-1]
+        value = p["Value"]
+
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            raise SystemExit("Invalid environment variable name")
+
+        if "\\n" in value or "\\r" in value:
+            raise SystemExit("Multiline environment values are unsupported")
+
+        f.write(f"{key}={value}\\n")
+'
+
+chmod 600 "\${ENV_FILE}"
+
+rm -f /tmp/unque-parameters.json
+
+# --------------------------------------
+# 3. IDENTIFY ACTIVE SLOT
+# --------------------------------------
+
+if [ -f "\${STATE_FILE}" ]; then
+
+    ACTIVE_SLOT=$(cat "\${STATE_FILE}")
+
+else
+
+    ACTIVE_SLOT="none"
+
+fi
+
+echo "Current active slot: \${ACTIVE_SLOT}"
+
+if [ "\${ACTIVE_SLOT}" = "blue" ]; then
+
+    TARGET_SLOT="green"
+
+    TARGET_PORT="\${GREEN_PORT}"
+
+    TARGET_CONTAINER="\${GREEN_CONTAINER}"
+
+elif [ "\${ACTIVE_SLOT}" = "green" ]; then
+
+    TARGET_SLOT="blue"
+
+    TARGET_PORT="\${BLUE_PORT}"
+
+    TARGET_CONTAINER="\${BLUE_CONTAINER}"
+
+else
+
+    TARGET_SLOT="blue"
+
+    TARGET_PORT="\${BLUE_PORT}"
+
+    TARGET_CONTAINER="\${BLUE_CONTAINER}"
+
+fi
+
+echo "Target slot: \${TARGET_SLOT}"
+
+echo "Target container: \${TARGET_CONTAINER}"
+
+# --------------------------------------
+# 4. PULL NEW IMAGE
+# --------------------------------------
+
+echo "Pulling new Docker image..."
+
+docker pull "\${IMAGE}"
+
+# --------------------------------------
+# 5. REMOVE ONLY INACTIVE CONTAINER
+# --------------------------------------
+
+echo "Removing old inactive container if present..."
+
+docker rm -f "\${TARGET_CONTAINER}" 2>/dev/null || true
+
+# --------------------------------------
+# 6. START NEW CONTAINER
+# --------------------------------------
+
+echo "Starting new container..."
+
+docker run -d \\
+    --name "\${TARGET_CONTAINER}" \\
+    --restart unless-stopped \\
+    --env-file "\${ENV_FILE}" \\
+    -p "127.0.0.1:\${TARGET_PORT}:3000" \\
+    "\${IMAGE}"
+
+# --------------------------------------
+# 7. HEALTH CHECK
+# --------------------------------------
+
+echo "Waiting for application health..."
+
+HEALTHY=false
+
+for i in $(seq 1 30); do
+
+    STATUS=$(docker inspect \\
+        --format='{{.State.Health.Status}}' \\
+        "\${TARGET_CONTAINER}" 2>/dev/null || echo "missing")
+
+    echo "Docker health: \${STATUS}"
+
+    if [ "\${STATUS}" = "healthy" ]; then
+
+        HEALTHY=true
+        break
+
+    fi
+
+    if [ "\${STATUS}" = "unhealthy" ]; then
+
+        break
+
+    fi
+
+    sleep 5
+
+done
+
+if [ "\${HEALTHY}" != "true" ]; then
+
+    echo "New container failed health verification!"
+
+    docker logs "\${TARGET_CONTAINER}" || true
+
+    docker rm -f "\${TARGET_CONTAINER}" || true
+
+    exit 1
+
+fi
+
+# Additional HTTP verification
+
+if ! curl -fsS "http://127.0.0.1:\${TARGET_PORT}/health" >/dev/null; then
+
+    echo "HTTP health check failed!"
+
+    docker logs "\${TARGET_CONTAINER}" || true
+
+    docker rm -f "\${TARGET_CONTAINER}" || true
+
+    exit 1
+
+fi
+
+echo "New container is healthy!"
+
+# --------------------------------------
+# 8. PREPARE NGINX CONFIGURATION
+# --------------------------------------
+
+echo "Preparing Nginx traffic switch..."
+
+NGINX_DIR=$(dirname "\${NGINX_UPSTREAM}")
+
+mkdir -p "\${NGINX_DIR}"
+
+BACKUP_FILE="\${NGINX_UPSTREAM}.backup"
+
+TEMP_FILE="\${NGINX_UPSTREAM}.tmp"
+
+if [ -f "\${NGINX_UPSTREAM}" ]; then
+
+    cp "\${NGINX_UPSTREAM}" "\${BACKUP_FILE}"
+
+else
+
+    rm -f "\${BACKUP_FILE}"
+
+fi
+
+cat > "\${TEMP_FILE}" <<EOF
+upstream \${UPSTREAM_NAME} {
+    server 127.0.0.1:\${TARGET_PORT};
+}
+EOF
+
+mv "\${TEMP_FILE}" "\${NGINX_UPSTREAM}"
+
+# --------------------------------------
+# 9. VALIDATE NGINX
+# --------------------------------------
+
+if ! nginx -t; then
+
+    echo "Nginx configuration validation failed!"
+
+    if [ -f "\${BACKUP_FILE}" ]; then
+        mv "\${BACKUP_FILE}" "\${NGINX_UPSTREAM}"
+    else
+        rm -f "\${NGINX_UPSTREAM}"
+    fi
+
+    docker rm -f "\${TARGET_CONTAINER}" || true
+
+    exit 1
+
+fi
+
+# --------------------------------------
+# 10. SWITCH TRAFFIC
+# --------------------------------------
+
+echo "Switching Nginx traffic..."
+
+if ! systemctl reload nginx; then
+
+    echo "Nginx reload failed. Restoring previous configuration..."
+
+    if [ -f "\${BACKUP_FILE}" ]; then
+        mv "\${BACKUP_FILE}" "\${NGINX_UPSTREAM}"
+    else
+        rm -f "\${NGINX_UPSTREAM}"
+    fi
+
+    nginx -t && systemctl reload nginx || true
+
+    docker rm -f "\${TARGET_CONTAINER}" || true
+
+    exit 1
+
+fi
+
+# --------------------------------------
+# 11. VERIFY NGINX UPSTREAM
+# --------------------------------------
+
+if ! curl -fsS "http://127.0.0.1:\${TARGET_PORT}/health" >/dev/null; then
+
+    echo "Post-deployment verification failed!"
+
+    if [ -f "\${BACKUP_FILE}" ]; then
+        mv "\${BACKUP_FILE}" "\${NGINX_UPSTREAM}"
+        nginx -t && systemctl reload nginx
+    fi
+
+    docker rm -f "\${TARGET_CONTAINER}" || true
+
+    exit 1
+
+fi
+
+# --------------------------------------
+# 12. UPDATE ACTIVE SLOT
+# --------------------------------------
+
+echo "\${TARGET_SLOT}" > "\${STATE_FILE}"
+
+rm -f "\${BACKUP_FILE}"
+
+echo "======================================"
+echo "BLUE-GREEN DEPLOYMENT SUCCESSFUL"
+echo "======================================"
+
+echo "Environment: \${ENVIRONMENT}"
+
+echo "Active slot: \${TARGET_SLOT}"
+
+echo "Container: \${TARGET_CONTAINER}"
+
+echo "Port: \${TARGET_PORT}"
+
+echo "Image: \${IMAGE}"
+
+echo "Previous container retained for rollback."
+
+"""
+
+                    def encodedScript = remoteScript.bytes.encodeBase64().toString()
+
+                    sh """
+                        set -e
+
+                        echo "Sending deployment command through SSM..."
+
+                        python3 -c 'import json; print(json.dumps({"commands":["echo ${encodedScript} | base64 -d | sudo bash"]}))' > ssm-parameters.json
+
+                        COMMAND_ID=\$(aws ssm send-command \\
+                            --instance-ids ${EC2_INSTANCE} \\
+                            --document-name AWS-RunShellScript \\
+                            --comment "Blue-Green deployment: ${DEPLOY_ENV}" \\
+                            --parameters file://ssm-parameters.json \\
+                            --query 'Command.CommandId' \\
+                            --output text)
+
+                        echo "SSM Command ID: \$COMMAND_ID"
+
+                        aws ssm wait command-executed \\
+                            --command-id \$COMMAND_ID \\
+                            --instance-id ${EC2_INSTANCE}
+
+                        STATUS=\$(aws ssm get-command-invocation \\
+                            --command-id \$COMMAND_ID \\
+                            --instance-id ${EC2_INSTANCE} \\
+                            --query 'Status' \\
+                            --output text)
+
+                        if [ "\$STATUS" != "Success" ]; then
+
+                            echo "Deployment failed!"
+
+                            aws ssm get-command-invocation \\
+                                --command-id \$COMMAND_ID \\
+                                --instance-id ${EC2_INSTANCE} \\
+                                --query 'StandardErrorContent' \\
+                                --output text || true
+
+                            exit 1
+
+                        fi
+
+                        rm -f ssm-parameters.json
+
+                        echo "Blue-Green deployment successful!"
+                    """
+                }
+            }
+        }
+
+
+        // =====================================
+        // 8. DEPLOYMENT SUMMARY
+        // =====================================
+
+        stage('Deployment Summary') {
+
+            steps {
+
+                echo """
+                =========================================
+
+                BLUE-GREEN DEPLOYMENT SUCCESSFUL
+
+                =========================================
+
+                Branch       : ${BRANCH_NAME}
+                Environment  : ${DEPLOY_ENV}
+                Image        : ${ECR_URI}:${IMAGE_TAG}
+                EC2 Instance : ${EC2_INSTANCE}
+
+                =========================================
+                """
+            }
+        }
+
+    }
+
+
+    // =====================================
+    // POST ACTIONS
+    // =====================================
+
+    post {
+
+        success {
+
+            echo "Pipeline completed successfully!"
+        }
+
+        failure {
+
+            echo "Pipeline failed. Previous active container should remain available."
+        }
+
+        always {
+
+            echo "Pipeline execution completed."
+        }
+    }
+}
+```

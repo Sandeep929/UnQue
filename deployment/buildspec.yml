@@ -1,0 +1,52 @@
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    commands:
+      - echo "Starting Docker image build..."
+      - echo "Environment: ${ENVIRONMENT}"
+      - echo "Image tag: ${IMAGE_TAG}"
+
+      # Validate required environment variables
+      - |
+        if [ -z "$IMAGE_TAG" ] || [ -z "$ECR_REPOSITORY" ] || [ -z "$ENVIRONMENT" ]; then
+          echo "ERROR: IMAGE_TAG, ECR_REPOSITORY and ENVIRONMENT are required."
+          exit 1
+        fi
+
+      # Get AWS account ID
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+      # Construct ECR image URI
+      - export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY}"
+
+      - echo "ECR Repository: ${ECR_URI}"
+
+      # Authenticate Docker with Amazon ECR
+      - aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+
+  build:
+    commands:
+      - echo "Building Docker image..."
+
+      # Build image using the Dockerfile in repository root
+      - docker build --pull -t "${ECR_URI}:${IMAGE_TAG}" .
+
+      - echo "Docker image built successfully."
+
+  post_build:
+    commands:
+      - echo "Pushing Docker image to ECR..."
+
+      # Push commit-specific image tag
+      - docker push "${ECR_URI}:${IMAGE_TAG}"
+
+      - echo "Docker image pushed successfully."
+      - echo "----------------------------------------"
+      - echo "Build completed successfully"
+      - echo "Environment: ${ENVIRONMENT}"
+      - echo "Image: ${ECR_URI}:${IMAGE_TAG}"
+      - echo "----------------------------------------"
