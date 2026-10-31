@@ -353,7 +353,12 @@ jobs:
 
           # The heredoc body is indented by YAML; strip that leading indentation
           sed -i 's/^          //' remote.sh
+          echo "========== GENERATED REMOTE SCRIPT =========="
+          nl -ba remote.sh | sed -n '1,80p'
 
+          echo "========== PYTHON BLOCK WITH VISIBLE SPACES =========="
+          sed -n '15,40l' remote.sh
+          
       - name: Run deployment on EC2 via SSM
         run: |
           set -e
