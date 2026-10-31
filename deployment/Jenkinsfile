@@ -134,14 +134,14 @@ pipeline {
                     DEPLOYMENT CONFIGURATION
                     =====================================
 
-                    Branch       : ${env.BRANCH_NAME}
-                    Environment  : ${env.DEPLOY_ENV}
-                    EC2           : ${env.EC2_INSTANCE}
-                    ECR           : ${env.ECR_URI}
-                    Image Tag     : ${env.IMAGE_TAG}
+                    Branch       : \${env.BRANCH_NAME}
+                    Environment  : \${env.DEPLOY_ENV}
+                    EC2           : \${env.EC2_INSTANCE}
+                    ECR           : \${env.ECR_URI}
+                    Image Tag     : \${env.IMAGE_TAG}
 
-                    Blue Port     : ${env.BLUE_PORT}
-                    Green Port    : ${env.GREEN_PORT}
+                    Blue Port     : \${env.BLUE_PORT}
+                    Green Port    : \${env.GREEN_PORT}
 
                     =====================================
                     """
@@ -295,7 +295,7 @@ set -Eeuo pipefail
 
 echo "======================================"
 echo "STARTING BLUE-GREEN DEPLOYMENT"
-echo "Environment: ${DEPLOY_ENV}"
+echo "Environment: \${DEPLOY_ENV}"
 echo "======================================"
 
 # --------------------------------------
