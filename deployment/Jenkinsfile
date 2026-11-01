@@ -244,12 +244,12 @@ pipeline {
                         echo "Starting AWS CodeBuild..."
 
                         BUILD_ID=\$(aws codebuild start-build \
-                            --project-name ${CODEBUILD_PROJECT} \
-                            --source-version ${IMAGE_TAG} \
+                            --project-name \${CODEBUILD_PROJECT} \
+                            --source-version \${IMAGE_TAG} \
                             --environment-variables-override \
-                                name=IMAGE_TAG,value=${IMAGE_TAG},type=PLAINTEXT \
-                                name=ECR_REPOSITORY,value=${ECR_REPOSITORY},type=PLAINTEXT \
-                                name=ENVIRONMENT,value=${DEPLOY_ENV},type=PLAINTEXT \
+                                name=IMAGE_TAG,value=\${IMAGE_TAG},type=PLAINTEXT \
+                                name=ECR_REPOSITORY,value=\${ECR_REPOSITORY},type=PLAINTEXT \
+                                name=ENVIRONMENT,value=\${DEPLOY_ENV},type=PLAINTEXT \
                             --query 'build.id' \
                             --output text)
 
