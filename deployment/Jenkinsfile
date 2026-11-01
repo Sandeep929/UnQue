@@ -274,7 +274,7 @@ pipeline {
                                 break
                             fi
 
-                            if [[ "\$BUILD_STATUS" =~ ^(FAILED|FAULT|STOPPED|TIMED_OUT)$ ]]; then
+                            if [[ "\$BUILD_STATUS" =~ ^(FAILED|FAULT|STOPPED|TIMED_OUT)\$ ]]; then
                                 echo "CodeBuild failed with status: \$BUILD_STATUS"
                                 exit 1
                             fi
