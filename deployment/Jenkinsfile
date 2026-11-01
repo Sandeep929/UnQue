@@ -234,46 +234,67 @@ pipeline {
         // 6. BUILD AND PUSH IMAGE
         // =====================================
 
+
         stage('Build & Push Image') {
-
             steps {
-
                 script {
-
                     sh """
                         set -e
 
                         echo "Starting AWS CodeBuild..."
 
-                        BUILD_ID=\$(aws codebuild start-build \\
-                            --project-name ${CODEBUILD_PROJECT} \\
-                            --source-version ${IMAGE_TAG} \\
-                            --environment-variables-override \\
-                                name=IMAGE_TAG,value=${IMAGE_TAG},type=PLAINTEXT \\
-                                name=ECR_REPOSITORY,value=${ECR_REPOSITORY},type=PLAINTEXT \\
-                                name=ENVIRONMENT,value=${DEPLOY_ENV},type=PLAINTEXT \\
-                            --query 'build.id' \\
+                        BUILD_ID=\$(aws codebuild start-build \
+                            --project-name ${CODEBUILD_PROJECT} \
+                            --source-version ${IMAGE_TAG} \
+                            --environment-variables-override \
+                                name=IMAGE_TAG,value=${IMAGE_TAG},type=PLAINTEXT \
+                                name=ECR_REPOSITORY,value=${ECR_REPOSITORY},type=PLAINTEXT \
+                                name=ENVIRONMENT,value=${DEPLOY_ENV},type=PLAINTEXT \
+                            --query 'build.id' \
                             --output text)
 
                         echo "Build ID: \$BUILD_ID"
 
-                        aws codebuild wait build-complete --ids \$BUILD_ID
+                        echo "Waiting for CodeBuild to complete..."
 
-                        BUILD_STATUS=\$(aws codebuild batch-get-builds \\
-                            --ids \$BUILD_ID \\
-                            --query 'builds[0].buildStatus' \\
-                            --output text)
+                        MAX_ATTEMPTS=120
+                        ATTEMPT=0
 
-                        if [ "\$BUILD_STATUS" != "SUCCEEDED" ]; then
-                            echo "CodeBuild failed!"
+                        while [ \$ATTEMPT -lt \$MAX_ATTEMPTS ]; do
+
+                            BUILD_STATUS=\$(aws codebuild batch-get-builds \
+                                --ids \$BUILD_ID \
+                                --query 'builds[0].buildStatus' \
+                                --output text)
+
+                            echo "CodeBuild Status: \$BUILD_STATUS"
+
+                            if [ "\$BUILD_STATUS" = "SUCCEEDED" ]; then
+                                echo "CodeBuild completed successfully!"
+                                break
+                            fi
+
+                            if [[ "\$BUILD_STATUS" =~ ^(FAILED|FAULT|STOPPED|TIMED_OUT)$ ]]; then
+                                echo "CodeBuild failed with status: \$BUILD_STATUS"
+                                exit 1
+                            fi
+
+                            ATTEMPT=\$((ATTEMPT + 1))
+
+                            sleep 15
+                        done
+
+                        if [ \$ATTEMPT -ge \$MAX_ATTEMPTS ]; then
+                            echo "CodeBuild timed out after 30 minutes."
                             exit 1
                         fi
 
-                        echo "Image pushed successfully!"
+                        echo "Docker image successfully built and pushed."
                     """
                 }
             }
         }
+
 
 
         // =====================================
