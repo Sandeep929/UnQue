@@ -657,7 +657,11 @@ echo "Previous container retained for rollback."
 
 """
 
-                    def encodedScript = remoteScript.bytes.encodeBase64().toString()
+                    def encodedScript = sh(
+                        script: 'base64 -w 0',
+                        returnStdout: true,
+                        stdin: remoteScript
+                    ).trim()
 
                     sh """
                         set -e
