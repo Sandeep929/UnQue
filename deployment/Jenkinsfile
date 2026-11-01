@@ -370,8 +370,9 @@ aws ssm get-parameters-by-path \\
     --with-decryption \\
     --output json > /tmp/unque-parameters.json
 
-python3 -c '
+ENV_FILE="$ENV_FILE" python3 -c '
 import json
+import os
 import re
 
 with open("/tmp/unque-parameters.json") as f:
@@ -382,7 +383,7 @@ parameters = data.get("Parameters", [])
 if not parameters:
     raise SystemExit("ERROR: No SSM parameters found")
 
-with open(r'"\${ENV_FILE}"', "w") as f:
+with open(os.environ["ENV_FILE"], "w") as f:
     for p in parameters:
         key = p["Name"].split("/")[-1]
         value = p["Value"]
@@ -390,10 +391,10 @@ with open(r'"\${ENV_FILE}"', "w") as f:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
             raise SystemExit("Invalid environment variable name")
 
-        if "\\n" in value or "\\r" in value:
+        if "\n" in value or "\r" in value:
             raise SystemExit("Multiline environment values are unsupported")
 
-        f.write(f"{key}={value}\\n")
+        f.write(f"{key}={value}\n")
 '
 
 chmod 600 "\${ENV_FILE}"
