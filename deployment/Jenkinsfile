@@ -343,13 +343,13 @@ UPSTREAM_NAME="${env.UPSTREAM_NAME}"
 
 AWS_REGION="${env.AWS_REGION}"
 
-STATE_DIR="/opt/unque/\\${ENVIRONMENT}"
+STATE_DIR="/opt/unque/\${ENVIRONMENT}"
 
-STATE_FILE="\\${STATE_DIR}/active-slot"
+STATE_FILE="\${STATE_DIR}/active-slot"
 
-ENV_FILE="\\${STATE_DIR}/.env"
+ENV_FILE="\${STATE_DIR}/.env"
 
-mkdir -p "\\${STATE_DIR}"
+mkdir -p "\${STATE_DIR}"
 
 # --------------------------------------
 # 1. ECR AUTHENTICATION
@@ -357,7 +357,7 @@ mkdir -p "\\${STATE_DIR}"
 
 echo "Authenticating with ECR..."
 
-aws ecr get-login-password --region "\\${AWS_REGION}" | \\
+aws ecr get-login-password --region "\${AWS_REGION}" | \\
 docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
 # --------------------------------------
