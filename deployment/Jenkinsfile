@@ -311,43 +311,45 @@ pipeline {
 
                     def ECR_REGISTRY = ECR_URI.split('/')[0]
 
-                    def remoteScript = """
+def remoteScript = """
 #!/bin/bash
 
 set -Eeuo pipefail
 
 echo "======================================"
 echo "STARTING BLUE-GREEN DEPLOYMENT"
-echo "Environment: \${DEPLOY_ENV}"
+echo "Environment: ${env.DEPLOY_ENV}"
 echo "======================================"
 
 # --------------------------------------
 # CONFIGURATION
 # --------------------------------------
 
-IMAGE="\${ECR_URI}:\${IMAGE_TAG}"
+IMAGE="${env.ECR_URI}:${env.IMAGE_TAG}"
 
-ENVIRONMENT="\${DEPLOY_ENV}"
+ENVIRONMENT="${env.DEPLOY_ENV}"
 
-SSM_PATH="\${SSM_PATH}"
+SSM_PATH="${env.SSM_PATH}"
 
-BLUE_PORT="\${BLUE_PORT}"
-GREEN_PORT="\${GREEN_PORT}"
+BLUE_PORT="${env.BLUE_PORT}"
+GREEN_PORT="${env.GREEN_PORT}"
 
-BLUE_CONTAINER="\${BLUE_CONTAINER}"
-GREEN_CONTAINER="\${GREEN_CONTAINER}"
+BLUE_CONTAINER="${env.BLUE_CONTAINER}"
+GREEN_CONTAINER="${env.GREEN_CONTAINER}"
 
-NGINX_UPSTREAM="\${NGINX_UPSTREAM}"
+NGINX_UPSTREAM="${env.NGINX_UPSTREAM}"
 
-UPSTREAM_NAME="\${UPSTREAM_NAME}"
+UPSTREAM_NAME="${env.UPSTREAM_NAME}"
 
-STATE_DIR="/opt/unque/\${ENVIRONMENT}"
+AWS_REGION="${env.AWS_REGION}"
 
-STATE_FILE="\${STATE_DIR}/active-slot"
+STATE_DIR="/opt/unque/\\${ENVIRONMENT}"
 
-ENV_FILE="\${STATE_DIR}/.env"
+STATE_FILE="\\${STATE_DIR}/active-slot"
 
-mkdir -p "\${STATE_DIR}"
+ENV_FILE="\\${STATE_DIR}/.env"
+
+mkdir -p "\\${STATE_DIR}"
 
 # --------------------------------------
 # 1. ECR AUTHENTICATION
@@ -355,8 +357,8 @@ mkdir -p "\${STATE_DIR}"
 
 echo "Authenticating with ECR..."
 
-aws ecr get-login-password --region \${AWS_REGION} | \
-docker login --username AWS --password-stdin \${ECR_REGISTRY}
+aws ecr get-login-password --region "\\${AWS_REGION}" | \\
+docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
 # --------------------------------------
 # 2. RETRIEVE ENVIRONMENT VARIABLES
