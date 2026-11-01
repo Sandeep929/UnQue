@@ -657,10 +657,11 @@ echo "Previous container retained for rollback."
 
 """
 
+                    writeFile file: 'deployment-script.sh', text: remoteScript
+
                     def encodedScript = sh(
-                        script: 'base64 -w 0',
-                        returnStdout: true,
-                        stdin: remoteScript
+                        script: 'base64 -w 0 deployment-script.sh',
+                        returnStdout: true
                     ).trim()
 
                     sh """
