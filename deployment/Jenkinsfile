@@ -234,46 +234,69 @@ pipeline {
         // 6. BUILD AND PUSH IMAGE
         // =====================================
 
+
         stage('Build & Push Image') {
-
             steps {
-
                 script {
-
                     sh """
                         set -e
 
                         echo "Starting AWS CodeBuild..."
 
-                        BUILD_ID=\$(aws codebuild start-build \\
-                            --project-name ${CODEBUILD_PROJECT} \\
-                            --source-version ${IMAGE_TAG} \\
-                            --environment-variables-override \\
-                                name=IMAGE_TAG,value=${IMAGE_TAG},type=PLAINTEXT \\
-                                name=ECR_REPOSITORY,value=${ECR_REPOSITORY},type=PLAINTEXT \\
-                                name=ENVIRONMENT,value=${DEPLOY_ENV},type=PLAINTEXT \\
-                            --query 'build.id' \\
+                        BUILD_ID=\$(aws codebuild start-build \
+                            --project-name \${CODEBUILD_PROJECT} \
+                            --source-version \${IMAGE_TAG} \
+                            --environment-variables-override \
+                                name=IMAGE_TAG,value=\${IMAGE_TAG},type=PLAINTEXT \
+                                name=ECR_REPOSITORY,value=\${ECR_REPOSITORY},type=PLAINTEXT \
+                                name=ENVIRONMENT,value=\${DEPLOY_ENV},type=PLAINTEXT \
+                            --query 'build.id' \
                             --output text)
 
                         echo "Build ID: \$BUILD_ID"
 
-                        aws codebuild wait build-complete --ids \$BUILD_ID
+                        echo "Waiting for CodeBuild to complete..."
 
-                        BUILD_STATUS=\$(aws codebuild batch-get-builds \\
-                            --ids \$BUILD_ID \\
-                            --query 'builds[0].buildStatus' \\
-                            --output text)
+                        MAX_ATTEMPTS=120
+                        ATTEMPT=0
 
-                        if [ "\$BUILD_STATUS" != "SUCCEEDED" ]; then
-                            echo "CodeBuild failed!"
+                        while [ \$ATTEMPT -lt \$MAX_ATTEMPTS ]; do
+
+                            BUILD_STATUS=\$(aws codebuild batch-get-builds \
+                                --ids \$BUILD_ID \
+                                --query 'builds[0].buildStatus' \
+                                --output text)
+
+                            echo "CodeBuild Status: \$BUILD_STATUS"
+
+                            if [ "\$BUILD_STATUS" = "SUCCEEDED" ]; then
+                                echo "CodeBuild completed successfully!"
+                                break
+                            fi
+
+                            case "\$BUILD_STATUS" in
+                                FAILED|FAULT|STOPPED|TIMED_OUT)
+                                    echo "CodeBuild failed with status: \$BUILD_STATUS"
+                                    exit 1
+                                    ;;
+                            esac
+
+                            ATTEMPT=\$((ATTEMPT + 1))
+
+                            sleep 15
+                        done
+
+                        if [ \$ATTEMPT -ge \$MAX_ATTEMPTS ]; then
+                            echo "CodeBuild timed out after 30 minutes."
                             exit 1
                         fi
 
-                        echo "Image pushed successfully!"
+                        echo "Docker image successfully built and pushed."
                     """
                 }
             }
         }
+
 
 
         // =====================================
@@ -288,35 +311,37 @@ pipeline {
 
                     def ECR_REGISTRY = ECR_URI.split('/')[0]
 
-                    def remoteScript = """
+def remoteScript = """
 #!/bin/bash
 
 set -Eeuo pipefail
 
 echo "======================================"
 echo "STARTING BLUE-GREEN DEPLOYMENT"
-echo "Environment: \${DEPLOY_ENV}"
+echo "Environment: ${env.DEPLOY_ENV}"
 echo "======================================"
 
 # --------------------------------------
 # CONFIGURATION
 # --------------------------------------
 
-IMAGE="\${ECR_URI}:\${IMAGE_TAG}"
+IMAGE="${env.ECR_URI}:${env.IMAGE_TAG}"
 
-ENVIRONMENT="\${DEPLOY_ENV}"
+ENVIRONMENT="${env.DEPLOY_ENV}"
 
-SSM_PATH="\${SSM_PATH}"
+SSM_PATH="${env.SSM_PATH}"
 
-BLUE_PORT="\${BLUE_PORT}"
-GREEN_PORT="\${GREEN_PORT}"
+BLUE_PORT="${env.BLUE_PORT}"
+GREEN_PORT="${env.GREEN_PORT}"
 
-BLUE_CONTAINER="\${BLUE_CONTAINER}"
-GREEN_CONTAINER="\${GREEN_CONTAINER}"
+BLUE_CONTAINER="${env.BLUE_CONTAINER}"
+GREEN_CONTAINER="${env.GREEN_CONTAINER}"
 
-NGINX_UPSTREAM="\${NGINX_UPSTREAM}"
+NGINX_UPSTREAM="${env.NGINX_UPSTREAM}"
 
-UPSTREAM_NAME="\${UPSTREAM_NAME}"
+UPSTREAM_NAME="${env.UPSTREAM_NAME}"
+
+AWS_REGION="${env.AWS_REGION}"
 
 STATE_DIR="/opt/unque/\${ENVIRONMENT}"
 
@@ -332,8 +357,8 @@ mkdir -p "\${STATE_DIR}"
 
 echo "Authenticating with ECR..."
 
-aws ecr get-login-password --region \${AWS_REGION} | \
-docker login --username AWS --password-stdin \${ECR_REGISTRY}
+aws ecr get-login-password --region "\${AWS_REGION}" | \\
+docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
 # --------------------------------------
 # 2. RETRIEVE ENVIRONMENT VARIABLES
@@ -347,8 +372,9 @@ aws ssm get-parameters-by-path \\
     --with-decryption \\
     --output json > /tmp/unque-parameters.json
 
-python3 -c '
+ENV_FILE="\${ENV_FILE}" python3 -c '
 import json
+import os
 import re
 
 with open("/tmp/unque-parameters.json") as f:
@@ -359,7 +385,7 @@ parameters = data.get("Parameters", [])
 if not parameters:
     raise SystemExit("ERROR: No SSM parameters found")
 
-with open(r'"\${ENV_FILE}"', "w") as f:
+with open(os.environ["ENV_FILE"], "w") as f:
     for p in parameters:
         key = p["Name"].split("/")[-1]
         value = p["Value"]
@@ -634,7 +660,12 @@ echo "Previous container retained for rollback."
 
 """
 
-                    def encodedScript = remoteScript.bytes.encodeBase64().toString()
+                    writeFile file: 'deployment-script.sh', text: remoteScript
+
+                    def encodedScript = sh(
+                        script: 'base64 -w 0 deployment-script.sh',
+                        returnStdout: true
+                    ).trim()
 
                     sh """
                         set -e
@@ -655,11 +686,11 @@ echo "Previous container retained for rollback."
 
                         aws ssm wait command-executed \\
                             --command-id \$COMMAND_ID \\
-                            --instance-id ${EC2_INSTANCE}
+                            --instance-id \${EC2_INSTANCE}
 
                         STATUS=\$(aws ssm get-command-invocation \\
                             --command-id \$COMMAND_ID \\
-                            --instance-id ${EC2_INSTANCE} \\
+                            --instance-id \${EC2_INSTANCE} \\
                             --query 'Status' \\
                             --output text)
 
@@ -669,7 +700,7 @@ echo "Previous container retained for rollback."
 
                             aws ssm get-command-invocation \\
                                 --command-id \$COMMAND_ID \\
-                                --instance-id ${EC2_INSTANCE} \\
+                                --instance-id \${EC2_INSTANCE} \\
                                 --query 'StandardErrorContent' \\
                                 --output text || true
 
