@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.post("/availability", authMiddleware,profMiddleware, setAvailability);
 
-router.post("/updateAppointment", authMiddleware, profMiddleware, updateAppointments);
+router.patch("/updateAppointment/:studentId", authMiddleware, profMiddleware, updateAppointments);
 
 // Route to cancel appointments between professor and student - Only accessible to professors
 router.patch("/cancel-appointments/:studentId", authMiddleware, profMiddleware, cancelAppointments);
