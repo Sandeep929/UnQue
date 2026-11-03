@@ -63,6 +63,79 @@ const setAvailability = async (req, res, next) => {
   }
 };
 
+// Controller to update availability
+const updateAvailability = async (req, res, next) => {
+  try {
+    console.log(req.user);
+
+    const { startTime, endTime } = req.body;
+    const { availabilityId } = req.params;
+
+    if (!req.user || !req.user.id) {
+      return next(new HttpError("No professor ID found", 400));
+    }
+
+    // Ensure startTime is before endTime
+    if (new Date(startTime) >= new Date(endTime)) {
+      return next(new HttpError("Start time must be before end time", 400));
+    }
+
+    // Check whether availability exists and belongs to this professor
+    const existingAvailability = await Availability.findOne({
+      _id: availabilityId,
+      professorId: req.user.id
+    });
+
+    if (!existingAvailability) {
+      return next(new HttpError("Availability not found", 404));
+    }
+
+    // Check for overlapping availability (excluding current availability)
+    const overlappingAvailability = await Availability.findOne({
+      professorId: req.user.id,
+      _id: { $ne: availabilityId },
+      $or: [
+        {
+          startTime: { $lt: new Date(endTime) },
+          endTime: { $gt: new Date(startTime) }
+        },
+        {
+          startTime: { $lt: new Date(startTime) },
+          endTime: { $gt: new Date(endTime) }
+        }
+      ]
+    });
+
+    if (overlappingAvailability) {
+      return next(new HttpError("This time slot is already added for you professor", 400));
+    }
+
+    // Update existing availability
+    existingAvailability.startTime = startTime;
+    existingAvailability.endTime = endTime;
+
+    await existingAvailability.save();
+
+    const formattedStartTime = moment.utc(existingAvailability.startTime)
+      .format('MMMM Do YYYY, h:mm:ss a');
+
+    const formattedEndTime = moment.utc(existingAvailability.endTime)
+      .format('MMMM Do YYYY, h:mm:ss a');
+
+    res.status(200).json({
+      message: "Availability updated successfully",
+      availability: {
+        ...existingAvailability.toObject(),
+        startTime: formattedStartTime,
+        endTime: formattedEndTime,
+      },
+    });
+
+  } catch (error) {
+    console.log(error);
+    return next(new HttpError("Updating availability failed", 500));
+  }
+};
 
 
   const cancelAppointments = async(req,res,next) => {
@@ -107,4 +180,7 @@ const setAvailability = async (req, res, next) => {
       return next(new HttpError(error));
     }
   };
-export {setAvailability, cancelAppointments};
+ 
+
+
+export {setAvailability, cancelAppointments, updateAvailability};
