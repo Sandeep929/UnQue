@@ -25,6 +25,7 @@ const getAvailableSlots = async (req, res, next) => {
 
         // Format the available slots using moment.js
         const availableSlots = availability.map(avail => ({
+            id: avail._id,
             StartTime: moment(avail.startTime).format('MMMM Do YYYY, h:mm:ss a'),
             EndTime: moment(avail.endTime).format('MMMM Do YYYY, h:mm:ss a'),
         }));
