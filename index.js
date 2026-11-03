@@ -26,7 +26,7 @@ app.use(cors());
 app.use('/users', userRoutes);
 app.use('/professor',professorRoutes);
 app.use('/general', generalRoutes);
-// HEALTH CHECK
+
 app.get('/health', (req, res) => {
     res.status(200).json({
         status: 'UP',
