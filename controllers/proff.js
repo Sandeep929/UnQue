@@ -107,4 +107,63 @@ const setAvailability = async (req, res, next) => {
       return next(new HttpError(error));
     }
   };
-export {setAvailability, cancelAppointments};
+ 
+const updateAppointments = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const { time } = req.body;
+    const professorId = req.user.id;
+
+    console.log('Professor ID:', professorId);
+    console.log('Student ID:', studentId);
+
+    if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return next(new HttpError("Invalid or missing student ID", 400));
+    }
+
+    if (!time || isNaN(new Date(time).getTime())) {
+      return next(new HttpError("Invalid appointment date and time", 400));
+    }
+
+    const newTime = new Date(time);
+
+    if (newTime <= new Date()) {
+      return next(new HttpError("Cannot update appointment to a past date or time", 400));
+    }
+    
+    const appointments = await Appointment.find({
+      studentId: new mongoose.Types.ObjectId(studentId),
+      professorId: new mongoose.Types.ObjectId(professorId),
+      status: 'booked'
+    });
+
+    if (!appointments || appointments.length === 0) {
+      return next(new HttpError("No appointments found to update", 404));
+    }
+
+    // Update appointment date and time
+    await Appointment.updateMany(
+      {
+        studentId: new mongoose.Types.ObjectId(studentId),
+        professorId: new mongoose.Types.ObjectId(professorId),
+        status: 'booked'
+      },
+      {
+        $set: {
+          time: newTime
+        }
+      }
+    );
+
+    res.status(200).json({
+      message: `Appointments between professor ${professorId} and student ${studentId} have been rescheduled.`,
+      updatedTime: newTime
+    });
+
+  } catch (error) {
+    console.error("Error updating appointments:", error);
+    return next(new HttpError("Failed to update appointments", 500));
+  }
+};
+
+export {setAvailability, cancelAppointments, updateAppointments};
